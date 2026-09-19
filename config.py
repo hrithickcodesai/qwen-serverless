@@ -76,3 +76,15 @@ SCALER_TYPE = "QUEUE_DELAY"
 SCALER_VALUE = 4
 WORKERS_MIN = 0
 WORKERS_MAX = 2
+
+
+def _main():
+    """print config values for the makefile: python3 config.py <service> <attr>"""
+    import sys
+
+    service_name, attr = sys.argv[1], sys.argv[2]
+    print(getattr(SERVICES[service_name], attr))
+
+
+if __name__ == "__main__":
+    _main()

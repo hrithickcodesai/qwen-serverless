@@ -6,10 +6,9 @@ export
 VENV := .venv
 PYTHON := $(VENV)/bin/python
 
-# config.py is the single source of truth; read values from it via python3 (stdlib only)
-pyval = $(shell python3 -c "import config; print(config.$(1))")
-STT_IMAGE := $(call pyval,SERVICES['stt'].image)
-TTS_IMAGE := $(call pyval,SERVICES['tts'].image)
+# config.py is the single source of truth; makefile reads values through its cli
+STT_IMAGE := $(shell python3 config.py stt image)
+TTS_IMAGE := $(shell python3 config.py tts image)
 
 .PHONY: venv download-models auth-runpod auth-docker build-stt build-tts push-stt push-tts deploy-stt deploy-tts deploy test-stt test-tts format clean
 

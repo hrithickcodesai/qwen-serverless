@@ -39,6 +39,9 @@ def wav_bytes(pcm, sample_rate):
     return buffer.getvalue()
 
 
+load_model()
+
+
 def handler(job):
     job_input = job.get("input") or {}
     text = job_input.get("text")
