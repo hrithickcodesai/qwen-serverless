@@ -4,7 +4,7 @@ include .env
 export
 
 REGISTRY := hrithickcodes
-IMAGE := ghcr.io/hrithickcodesai/qwen3-asr-1.7b-runpod:latest
+IMAGE := hrithickcodes/qwen3-asr-1.7b-runpod:latest
 export IMAGE
 
 VENV := .venv

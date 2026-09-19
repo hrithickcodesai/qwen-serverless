@@ -17,7 +17,7 @@ audio = (
     if len(sys.argv) > 2
     else ("https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-ASR-Repo/asr_en.wav")
 )
-base = f"https://api.runpod.io/v2/{endpoint_id}"
+base = f"https://api.runpod.ai/v2/{endpoint_id}"
 
 resp = requests.post(
     f"{base}/run",
