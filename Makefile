@@ -3,33 +3,25 @@ SHELL := /bin/bash
 include .env
 export
 
-REGISTRY := hrithickcodes
-IMAGE := hrithickcodes/qwen3-asr-1.7b-runpod:latest
-export IMAGE
-
 VENV := .venv
 PYTHON := $(VENV)/bin/python
+
+# config.py is the single source of truth; read values from it via python3 (stdlib only)
+pyval = $(shell python3 -c "import config; print(config.$(1))")
+STT_IMAGE := $(call pyval,SERVICES['stt'].image)
+TTS_IMAGE := $(call pyval,SERVICES['tts'].image)
+
+.PHONY: venv download-models auth-runpod auth-docker build-stt build-tts push-stt push-tts deploy-stt deploy-tts deploy test-stt test-tts format clean
 
 $(VENV):
 	python3.12 -m venv $(VENV) \
 		&& $(VENV)/bin/pip install -U pip \
-		&& $(VENV)/bin/pip install runpod requests ruff "huggingface_hub[hf_transfer]"
+		&& $(VENV)/bin/pip install runpod requests ruff sounddevice soundfile "huggingface_hub[hf_transfer,hf-xet]"
 
 venv: $(VENV)
 
-HF_BASE := https://huggingface.co/Qwen/Qwen3-ASR-1.7B/resolve/main
-
-models/Qwen3-ASR-1.7B/model-00001-of-00002.safetensors:
-	$(PYTHON) scripts/fast_download.py $(HF_BASE)/model-00001-of-00002.safetensors $@
-
-models/Qwen3-ASR-1.7B/model-00002-of-00002.safetensors:
-	$(PYTHON) scripts/fast_download.py $(HF_BASE)/model-00002-of-00002.safetensors $@
-
-models/Qwen3-ASR-1.7B/.complete: models/Qwen3-ASR-1.7B/model-00001-of-00002.safetensors models/Qwen3-ASR-1.7B/model-00002-of-00002.safetensors
-	rm -rf models/Qwen3-ASR-1.7B/.cache
-	@touch $@
-
-download-model: models/Qwen3-ASR-1.7B/.complete
+download-models: venv
+	$(PYTHON) scripts/download_model.py all
 
 auth-runpod: venv
 	@$(PYTHON) -c "import os, sys; sys.exit(0 if os.environ.get('RUNPOD_API_KEY') else print('RUNPOD_API_KEY missing in .env') or 1)"
@@ -39,18 +31,32 @@ auth-docker:
 	@docker info >/dev/null 2>&1 || { echo 'docker is not running'; exit 1; }
 	@docker info 2>/dev/null | grep -q Username || echo 'warning: docker hub login not detected, push may fail'
 
-build: download-model
-	docker build --platform linux/amd64 -t $(IMAGE) .
+build-stt:
+	docker build --platform linux/amd64 --build-arg SERVICE=stt --build-arg MODEL_DIR=Qwen3-ASR-1.7B -t $(STT_IMAGE) .
 
-push: auth-docker
-	docker push $(IMAGE)
+build-tts:
+	docker build --platform linux/amd64 --build-arg SERVICE=tts --build-arg MODEL_DIR=Qwen3-TTS-12Hz-1.7B-VoiceDesign -t $(TTS_IMAGE) .
 
-deploy: venv
-	$(PYTHON) scripts/create_endpoint.py
+push-stt: auth-docker build-stt
+	docker push $(STT_IMAGE)
 
-test: venv
-	@if [ -z "$(ENDPOINT_ID)" ]; then echo 'usage: make test ENDPOINT_ID=<id>'; exit 1; fi
-	$(PYTHON) scripts/test_endpoint.py $(ENDPOINT_ID)
+push-tts: auth-docker build-tts
+	docker push $(TTS_IMAGE)
+
+deploy-stt: venv
+	$(PYTHON) scripts/create_endpoint.py stt
+
+deploy-tts: venv
+	$(PYTHON) scripts/create_endpoint.py tts
+
+deploy: deploy-stt deploy-tts
+
+test-stt: venv
+	@if [ -z "$(WAV)" ]; then echo 'usage: make test-stt WAV=path/to/audio.wav'; exit 1; fi
+	$(PYTHON) scripts/stt.py file $(WAV)
+
+test-tts: venv
+	$(PYTHON) scripts/tts.py "This voice was designed on demand." --instruct "warm confident narrator, medium pace" --out /tmp/test_tts.wav
 
 format: venv
 	$(VENV)/bin/ruff format .
@@ -58,5 +64,4 @@ format: venv
 
 clean:
 	rm -rf $(VENV) .ruff_cache
-
-.PHONY: venv download-model auth-runpod auth-docker build push deploy test format clean
+	find . -name __pycache__ -type d -exec rm -rf {} +

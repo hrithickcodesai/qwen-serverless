@@ -1,8 +1,14 @@
 FROM python:3.12-slim
 
+# SERVICE selects which requirements/worker this image carries:
+#   --build-arg SERVICE=stt  -> speech to text (qwen-asr)
+#   --build-arg SERVICE=tts  -> voice design text to speech (qwen-tts)
+ARG SERVICE=stt
+
 ENV PYTHONUNBUFFERED=1 \
     HF_HOME=/app/hf \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    WORKER=${SERVICE}
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg git build-essential \
@@ -10,14 +16,15 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install torch --index-url https://download.pytorch.org/whl/cu128 \
-    && pip install -r requirements.txt
+COPY requirements-${SERVICE}.txt .
+RUN pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128 \
+    && pip install -r requirements-${SERVICE}.txt
 
-COPY models/ ./models/
+ARG MODEL_DIR
+COPY models/${MODEL_DIR}/ ./models/${MODEL_DIR}/
 
 ENV HF_HUB_OFFLINE=1
 
-COPY src/handler.py ./src/handler.py
+COPY src/ ./src/
 
-CMD ["python", "-u", "src/handler.py"]
+CMD ["python", "-u", "src/worker.py"]

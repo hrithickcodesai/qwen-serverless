@@ -4,7 +4,6 @@ import pathlib
 import urllib.parse
 import urllib.request
 
-import runpod
 import torch
 from loguru import logger
 from qwen_asr import Qwen3ASRModel
@@ -70,4 +69,3 @@ def handler(job):
 
 
 load_model()
-runpod.serverless.start({"handler": handler})
