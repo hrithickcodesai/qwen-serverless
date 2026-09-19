@@ -8,7 +8,7 @@ import torch
 from loguru import logger
 from qwen_asr import Qwen3ASRModel
 
-MODEL_ID = os.environ.get("MODEL_ID", "/app/models/Qwen3-ASR-1.7B")
+MODEL_ID = os.environ.get("STT_MODEL_ID", "/app/models/Qwen3-ASR-1.7B")
 DATA_URI_PREFIX = "data:audio"
 
 model = None
@@ -17,10 +17,14 @@ model = None
 def load_model():
     global model
     logger.info("loading model {}", MODEL_ID)
+    # bf16 halves weight memory and doubles tensor-core throughput vs fp32;
+    # sdpa = torch's fused flash/mem-efficient attention, fastest safe choice
+    # on ampere without pulling in flash-attention builds
     model = Qwen3ASRModel.from_pretrained(
         MODEL_ID,
         dtype=torch.bfloat16,
         device_map="cuda:0",
+        attn_implementation="sdpa",
         max_inference_batch_size=8,
         max_new_tokens=512,
     )
@@ -66,6 +70,3 @@ def handler(job):
     except Exception as exc:  # noqa: BLE001 - serverless caller needs an error payload
         logger.exception("transcription failed")
         return {"error": f"{type(exc).__name__}: {exc}"}
-
-
-load_model()

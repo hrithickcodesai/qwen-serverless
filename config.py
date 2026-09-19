@@ -1,89 +1,83 @@
-"""single source of truth for non-secret deploy config.
+"""all deploy config in one place, read by the makefile, deploy script and handlers.
 
-secrets (RUNPOD_API_KEY etc.) live in .env; everything deployable lives here.
-makefile and scripts both read from this module.
+secrets (RUNPOD_API_KEY, endpoint ids) live in .env, loaded into env vars.
+everything else lives here. run `python config.py` to see the effective values.
 """
 
-import pathlib
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-DOCKERHUB_NAMESPACE = "hrithickcodes"
-HF_HOME_IN_CONTAINER = "/app/hf"
+MODEL_DIRS = {
+    "stt": "Qwen3-ASR-1.7B",
+    "tts": "Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+}
 
-MODELS_DIR = pathlib.Path(__file__).parent / "models"
+# model repo ids on huggingface
+HF_REPO_IDS = {
+    "stt": "Qwen/Qwen3-ASR-1.7B",
+    "tts": "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+}
 
+# docker hub repos; one image per service because qwen-asr and qwen-tts
+# pin different exact versions of transformers
+IMAGE_REPOS = {
+    "stt": "hrithickcodes/qwen3-asr-1.7b-runpod:latest",
+    "tts": "hrithickcodes/qwen3-tts-voicedesign-runpod:latest",
+}
 
-class Service:
-    name: str
-    image_repo: str
-    endpoint_name: str
-    gpu_pool: str
-    container_disk_gb: int
+ENDPOINT_NAMES = {
+    "stt": "qwen3-asr-1.7b",
+    "tts": "qwen3-tts-voicedesign",
+}
 
-    def __init__(
-        self,
-        name,
-        model_repo_id,
-        local_model_dir,
-        image_repo,
-        endpoint_name,
-        gpu_pool,
-        container_disk_gb=25,
-    ):
-        self.name = name
-        self.model_repo_id = model_repo_id
-        self.local_model_dir = local_model_dir
-        self.image_repo = image_repo
-        self.endpoint_name = endpoint_name
-        self.gpu_pool = gpu_pool
-        self.container_disk_gb = container_disk_gb
-
-    @property
-    def image(self):
-        return f"{DOCKERHUB_NAMESPACE}/{self.image_repo}:latest"
-
-
-# gpu pool ids come from runpod's ctl API (see pick_gpu in scripts/create_endpoint.py)
+# runpod gpu pool ids, all ampere
 GPU_POOLS = {
-    "A4000": "AMPERE_16",
-    "4090": "ADA_24",
-    "A5000": "AMPERE_24",
-    "A6000": "AMPERE_48",
+    "stt": "AMPERE_16",  # rtx a4000 16GB
+    "tts": "AMPERE_24",  # rtx a5000 24GB, headroom for the 2B tts model
 }
 
-SERVICES = {
-    # ampere 24GB (A5000): headroom for the 2B tts model plus codec decode
-    "stt": Service(
-        name="stt",
-        model_repo_id="Qwen/Qwen3-ASR-1.7B",
-        local_model_dir="Qwen3-ASR-1.7B",
-        image_repo="qwen3-asr-1.7b-runpod",
-        endpoint_name="qwen3-asr-1.7b",
-        gpu_pool=GPU_POOLS["A4000"],
-    ),
-    "tts": Service(
-        name="tts",
-        model_repo_id="Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
-        local_model_dir="Qwen3-TTS-12Hz-1.7B-VoiceDesign",
-        image_repo="qwen3-tts-voicedesign-runpod",
-        endpoint_name="qwen3-tts-voicedesign",
-        gpu_pool=GPU_POOLS["A5000"],
-    ),
-}
 
-# shared endpoint scaling behaviour
-IDLE_TIMEOUT = 10
-SCALER_TYPE = "QUEUE_DELAY"
-SCALER_VALUE = 4
-WORKERS_MIN = 0
-WORKERS_MAX = 2
+class DeploySettings(BaseSettings):
+    """shared endpoint scaling + performance settings."""
+
+    model_config = SettingsConfigDict(env_prefix="", env_file=".env", extra="ignore")
+
+    # workers scale 0..max; with workers_min=0 nothing runs while idle.
+    # idle_timeout keeps a busy worker alive 2 min after its last job, so
+    # bursts within that window skip the ~3min cold start (pull + model load)
+    workers_min: int = 0
+    workers_max: int = 2
+
+    # seconds a worker stays up after its last job (min 60 per runpod quirk)
+    idle_timeout: int = 120
+
+    # flashboot: runpod's faster cold-boot path for serverless workers
+    flashboot: bool = True
+
+    # scaler: runpod adds a worker when queue delay exceeds scaler_value seconds
+    scaler_type: str = "QUEUE_DELAY"
+    scaler_value: int = 4
+
+    # gpu count per worker
+    gpu_count: int = 1
+
+    # container disk in gb; model weights + torch wheels need the room
+    container_disk_gb: int = 25
+
+
+settings = DeploySettings()
 
 
 def _main():
-    """print config values for the makefile: python3 config.py <service> <attr>"""
-    import sys
-
-    service_name, attr = sys.argv[1], sys.argv[2]
-    print(getattr(SERVICES[service_name], attr))
+    for name in ("stt", "tts"):
+        print(
+            f"{name}: image={IMAGE_REPOS[name]} endpoint={ENDPOINT_NAMES[name]} "
+            f"gpu={GPU_POOLS[name]} disk={settings.container_disk_gb}gb"
+        )
+    print(
+        f"scaling: min={settings.workers_min} max={settings.workers_max} "
+        f"idle_timeout={settings.idle_timeout}s flashboot={settings.flashboot} "
+        f"scaler={settings.scaler_type}:{settings.scaler_value}s"
+    )
 
 
 if __name__ == "__main__":

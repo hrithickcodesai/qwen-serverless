@@ -25,9 +25,7 @@ def main():
     names = list(config.SERVICES) if requested == "all" else [requested]
     for name in names:
         if name not in config.SERVICES:
-            sys.exit(
-                f"unknown service '{name}', expected one of {list(config.SERVICES)}"
-            )
+            sys.exit(f"unknown service '{name}', expected one of {list(config.SERVICES)}")
         download(name)
 
 

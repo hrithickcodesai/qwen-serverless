@@ -1,0 +1,22 @@
+[project]
+name = "qwen-speech-serverless"
+version = "1.0.0"
+description = "serverless stt + tts endpoints on runpod (qwen3 speech models)"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic-settings>=2.0",
+    "requests",
+    "runpod",
+    "ruff",
+    "huggingface_hub[hf_transfer,hf-xet]",
+]
+
+[project.optional-dependencies]
+# host-side stt client needs mic support; container images don't use these
+client = ["sounddevice", "soundfile"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B"]

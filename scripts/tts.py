@@ -29,9 +29,7 @@ def load_dotenv(path=".env"):
 
 def main():
     load_dotenv()
-    parser = argparse.ArgumentParser(
-        description="text to speech via runpod voice-design tts"
-    )
+    parser = argparse.ArgumentParser(description="text to speech via runpod voice-design tts")
     parser.add_argument("text", help="text to synthesize")
     parser.add_argument(
         "--instruct",
@@ -41,16 +39,15 @@ def main():
     parser.add_argument(
         "--language",
         default="Auto",
-        help="one of: Auto, Chinese, English, Japanese, Korean, German, French, Russian, Portuguese, Spanish, Italian",
+        help="Auto, or one of: Chinese, English, Japanese, Korean, German, "
+        "French, Russian, Portuguese, Spanish, Italian",
     )
     parser.add_argument("--out", default="output_tts.wav", help="path to save the wav")
     parser.add_argument("--temperature", type=float, default=None)
     parser.add_argument("--top-k", type=int, default=None)
     parser.add_argument("--top-p", type=float, default=None)
     parser.add_argument("--endpoint", default=os.environ.get("TTS_ENDPOINT_ID"))
-    parser.add_argument(
-        "--timeout", type=int, default=600, help="request timeout in seconds"
-    )
+    parser.add_argument("--timeout", type=int, default=600, help="request timeout in seconds")
     args = parser.parse_args()
 
     if not args.endpoint:
@@ -85,7 +82,8 @@ def main():
 
     Path(args.out).write_bytes(base64.b64decode(output["audio"]))
     print(
-        f"saved {args.out} ({output['duration_seconds']}s audio, {output['sample_rate']}Hz, {elapsed:.1f}s round trip)"
+        f"saved {args.out} ({output['duration_seconds']}s audio, "
+        f"{output['sample_rate']}Hz, {elapsed:.1f}s round trip)"
     )
 
 

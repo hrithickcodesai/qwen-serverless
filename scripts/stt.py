@@ -55,33 +55,25 @@ def transcribe(api_key, endpoint_id, audio_bytes, language, timeout):
 
 def main():
     load_dotenv()
-    parser = argparse.ArgumentParser(
-        description="record or transcribe audio via runpod stt"
-    )
+    parser = argparse.ArgumentParser(description="record or transcribe audio via runpod stt")
     sub = parser.add_subparsers(dest="command", required=True)
 
     rec = sub.add_parser("record", help="record from mic and transcribe")
     rec.add_argument("--seconds", type=float, default=10, help="recording length")
     rec.add_argument("--rate", type=int, default=DEFAULT_RATE, help="sample rate")
-    rec.add_argument(
-        "--playback", action="store_true", help="play back recording before sending"
-    )
+    rec.add_argument("--playback", action="store_true", help="play back recording before sending")
 
     file_cmd = sub.add_parser("file", help="transcribe an existing audio file")
     file_cmd.add_argument("path")
 
     for cmd in (rec, file_cmd):
-        cmd.add_argument(
-            "--language", default=None, help='language hint, e.g. "English"'
-        )
+        cmd.add_argument("--language", default=None, help='language hint, e.g. "English"')
         cmd.add_argument(
             "--endpoint",
             default=os.environ.get("STT_ENDPOINT_ID") or os.environ.get("ENDPOINT_ID"),
             help="runpod endpoint id",
         )
-        cmd.add_argument(
-            "--timeout", type=int, default=300, help="request timeout in seconds"
-        )
+        cmd.add_argument("--timeout", type=int, default=300, help="request timeout in seconds")
 
     args = parser.parse_args()
     if not args.endpoint:
@@ -103,9 +95,7 @@ def main():
         audio_bytes = Path(args.path).read_bytes()
 
     print(f"sending {len(audio_bytes)} bytes to endpoint {args.endpoint}...")
-    output, elapsed = transcribe(
-        api_key, args.endpoint, audio_bytes, args.language, args.timeout
-    )
+    output, elapsed = transcribe(api_key, args.endpoint, audio_bytes, args.language, args.timeout)
     print(f"language: {output['language']} ({elapsed:.1f}s round trip)")
     print(f"text: {output['text']}")
 
