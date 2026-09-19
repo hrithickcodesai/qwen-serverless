@@ -1,128 +1,55 @@
 # qwen-speech-serverless
 
-Serverless speech endpoints on RunPod, powered by Qwen3 speech models. Two independent services, each a RunPod serverless endpoint that scales to zero:
+Serverless speech endpoints on RunPod: **stt** (Qwen3-ASR-1.7B) and **tts** (Qwen3-TTS-12Hz-1.7B-VoiceDesign). Both scale to zero, stay alive 2 min after the last job, and run on Ampere GPUs.
 
-| service | model | endpoint name | gpu pool | input | output |
-| --- | --- | --- | --- | --- | --- |
-| **stt** | [Qwen3-ASR-1.7B](https://huggingface.co/Qwen/Qwen3-ASR-1.7B) | `qwen3-asr-1.7b` | A4000 (AMPERE_16) | audio (url or base64 wav) | transcript + language |
-| **tts** | [Qwen3-TTS-12Hz-1.7B-VoiceDesign](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign) | `qwen3-tts-voicedesign` | A5000 (AMPERE_24) | text + voice description | base64 wav |
-
-Both endpoints autoscale (0 to 2 workers, queue-delay scaler) and cost nothing while idle.
-
-## layout
-
-```
-config.py                    single source of truth: images, gpu pools, scaling
-src/
-  worker.py                  container entrypoint; WORKER=stt|tts picks the handler
-  stt_handler.py             qwen-asr transcription handler
-  tts_handler.py             voice-design tts handler
-scripts/
-  stt.py                     stt client: mic recording or audio file -> transcript
-  tts.py                     tts client: text + instruct -> wav file
-  create_endpoint.py         create/update runpod templates + endpoints
-  download_model.py          pull model weights from huggingface
-requirements-stt.txt         asr deps (transformers 4.57.6)
-requirements-tts.txt         tts deps (transformers 4.57.3)
-Dockerfile                   one image per service via --build-arg SERVICE=stt|tts
-Makefile                     everything: build, push, deploy, test, format
-```
-
-the asr and tts packages pin different exact versions of transformers, so they ship as separate images rather than fighting over one environment.
-
-## setup
+## quickstart
 
 ```bash
-make venv                      # python 3.12 virtualenv
-make download-models           # ~7GB of weights into models/
-docker login                   # docker hub (images push to hrithickcodes/*)
+make sync                # uv install
+make download-models     # model weights
+docker login
 echo 'RUNPOD_API_KEY=...' >> .env
+make deploy              # create/update both endpoints
 ```
 
-## deploy
-
-```bash
-make deploy                    # creates/updates both runpod endpoints
-# or one at a time
-make deploy-stt
-make deploy-tts
-```
-
-endpoint ids are printed; put them in `.env`:
-
-```
-STT_ENDPOINT_ID=...
-TTS_ENDPOINT_ID=...
-```
-
-changing images: edit `config.py`, then `make push-stt` / `make push-tts`. runpod re-pulls `:latest` on the next cold start; to force a warm worker to refresh, scale the endpoint to 0 workers and back in the runpod console.
+endpoint ids print on deploy; add them to `.env` as `STT_ENDPOINT_ID` / `TTS_ENDPOINT_ID`.
 
 ## use
 
-speech to text (mic or file):
+interactive playground (record mic, listen to generated speech): `playground.ipynb`
 
 ```bash
-.venv/bin/python scripts/stt.py record --seconds 10
-.venv/bin/python scripts/stt.py file speech.wav --language English
+# transcribe
+uv run python scripts/stt.py record --seconds 10
+uv run python scripts/stt.py file speech.wav
+
+# design a voice
+uv run python scripts/tts.py "Welcome aboard" --instruct "warm confident narrator, medium pace"
 ```
 
-text to speech with a designed voice:
+## api
 
-```bash
-.venv/bin/python scripts/tts.py "Welcome aboard" \
-  --instruct "warm confident narrator, medium pace" \
-  --language English --out welcome.wav
-```
-
-raw http (both endpoints):
-
-```bash
-curl -X POST https://api.runpod.ai/v2/$ENDPOINT_ID/runsync \
-  -H "Authorization: Bearer $RUNPOD_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"input": {...}}'
-```
-
-### stt request
+both endpoints: `POST https://api.runpod.ai/v2/<endpoint_id>/runsync`
 
 ```json
-{
-  "audio": "https://example.com/speech.wav",   // http(s) url, base64, or data:audio/...;base64 uri
-  "language": "English"                        // optional language hint
-}
+// stt input -> {"text": "...", "language": "..."}
+{"audio": "<url or base64>", "language": "English"}
+
+// tts input -> {"audio": "<base64 wav>", "sample_rate": 24000, "duration_seconds": 2.08}
+{"text": "...", "instruct": "voice description", "language": "Auto", "temperature": 0.7}
 ```
 
-response: `{"text": "...", "language": "English"}`
+errors come back as `{"error": "..."}`.
 
-### tts request
+## deploy
 
-```json
-{
-  "text": "Text to synthesize",
-  "instruct": "voice description: timbre, emotion, pace, accent",  // natural language, may be ""
-  "language": "Auto",            // Auto, Chinese, English, Japanese, Korean, German, French, Russian, Portuguese, Spanish, Italian
-  "temperature": 0.7,            // optional sampling knobs
-  "top_k": 50,
-  "top_p": 0.95
-}
+images, gpu pools and scaling live in `config.py` (`make deploy-config` to print them). after changing code or config:
+
+```bash
+make push-stt push-tts   # build + push images
+make deploy              # apply endpoint settings
 ```
 
-response: `{"audio": "<base64 wav>", "content_type": "audio/wav", "sample_rate": 24000, "duration_seconds": 2.08}`
+runpod warm workers keep a stale image; to force refresh, scale the endpoint to 0 workers and back in the console.
 
-the `instruct` field is the voice control: describe the speaker and delivery in plain language ("elderly man, gravelly voice, slow", "excited teenage girl, very fast"), and the model designs the voice. on errors the endpoint returns `{"error": "..."}` instead of raising.
-
-## make targets
-
-| target | what it does |
-| --- | --- |
-| `make venv` | create local virtualenv |
-| `make download-models` | fetch stt + tts weights into `models/` |
-| `make build-stt` / `build-tts` | docker build the service image |
-| `make push-stt` / `push-tts` | build + push to docker hub |
-| `make deploy` (or `deploy-stt`/`deploy-tts`) | create/update runpod endpoints |
-| `make test-stt WAV=file` | transcribe a file through the live endpoint |
-| `make test-tts` | synthesize a sample through the live endpoint |
-| `make format` | ruff format + lint fix |
-| `make clean` | remove venv, caches, `__pycache__` |
-
-secrets live only in `.env` (gitignored): `RUNPOD_API_KEY`, `STT_ENDPOINT_ID`, `TTS_ENDPOINT_ID`.
+secrets live only in `.env` (gitignored).
