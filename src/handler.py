@@ -1,5 +1,7 @@
 import base64
 import os
+import pathlib
+import urllib.parse
 import urllib.request
 
 import runpod
@@ -34,7 +36,8 @@ def download_audio(url, path):
 
 def resolve_audio(audio):
     if isinstance(audio, str) and audio.startswith(("http://", "https://")):
-        path = "/tmp/input_audio"
+        suffix = pathlib.Path(urllib.parse.urlparse(audio).path).suffix or ".wav"
+        path = "/tmp/input_audio" + suffix
         download_audio(audio, path)
         return path
     if isinstance(audio, str):
@@ -55,9 +58,9 @@ def handler(job):
         audio_input = resolve_audio(audio)
         result = model.transcribe(audio=audio_input, language=language)[0]
         return {"text": result.text, "language": result.language}
-    except Exception:  # noqa: BLE001 - serverless caller needs an error payload, not a stack trace
+    except Exception as exc:  # noqa: BLE001 - serverless caller needs an error payload
         logger.exception("transcription failed")
-        return {"error": "transcription failed, check worker logs"}
+        return {"error": f"{type(exc).__name__}: {exc}"}
 
 
 load_model()
