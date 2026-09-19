@@ -4,16 +4,40 @@ version = "1.0.0"
 description = "serverless stt + tts endpoints on runpod (qwen3 speech models)"
 requires-python = ">=3.12"
 dependencies = [
+    "huggingface_hub[hf_transfer,hf-xet]",
     "pydantic-settings>=2.0",
     "requests",
     "runpod",
     "ruff",
-    "huggingface_hub[hf_transfer,hf-xet]",
 ]
 
 [project.optional-dependencies]
 # host-side stt client needs mic support; container images don't use these
 client = ["sounddevice", "soundfile"]
+
+# container images install exactly one of these; qwen-asr and qwen-tts pin
+# different exact versions of transformers, so they can never coexist
+stt = ["torch", "qwen-asr", "loguru"]
+tts = ["torch", "torchaudio", "qwen-tts", "loguru", "soundfile"]
+
+[tool.uv]
+# declare the extras mutually exclusive so the lockfile can hold both pins
+conflicts = [
+    [
+        { extra = "stt" },
+        { extra = "tts" },
+    ],
+]
+
+# torch from the cu128 index (runpod driver compatible), not the cpu default
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchaudio = { index = "pytorch-cu128" }
 
 [tool.ruff]
 line-length = 100

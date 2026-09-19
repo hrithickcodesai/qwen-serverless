@@ -70,3 +70,6 @@ def handler(job):
     except Exception as exc:  # noqa: BLE001 - serverless caller needs an error payload
         logger.exception("transcription failed")
         return {"error": f"{type(exc).__name__}: {exc}"}
+
+
+load_model()

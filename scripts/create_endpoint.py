@@ -73,7 +73,7 @@ def update_endpoint(endpoint_id, endpoint_name):
         f", idleTimeout: {config.settings.idle_timeout}"
         f', scalerType: "{config.settings.scaler_type}"'
         f", scalerValue: {config.settings.scaler_value}"
-        ' }) { id workersMin workersMax idleTimeout } }'
+        " }) { id workersMin workersMax idleTimeout } }"
     )
     resp = runpod.api.graphql.run_graphql_query(query)["data"]["saveEndpoint"]
     print(
