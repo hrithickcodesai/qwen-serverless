@@ -43,7 +43,13 @@ def resolve_audio(audio):
     if isinstance(audio, str):
         if audio.startswith(DATA_URI_PREFIX):
             audio = audio.split(",", 1)[1]
-        return base64.b64decode(audio)
+        # qwen_asr's base64 sniffing fails when the string contains '/', so
+        # decode to a file ourselves instead of passing the string through
+        raw = base64.b64decode(audio, validate=False)
+        path = "/tmp/input_audio_b64.wav"
+        with open(path, "wb") as fh:
+            fh.write(raw)
+        return path
     raise ValueError("'audio' must be an http(s) url or base64 string")
 
 
