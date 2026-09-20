@@ -1,15 +1,18 @@
 FROM python:3.12-slim
 
-# SERVICE selects the dependency extra and worker module:
+# SERVICE selects the dependency extra and model dir:
 #   --build-arg SERVICE=stt  -> speech to text (qwen-asr)
 #   --build-arg SERVICE=tts  -> voice design text to speech (qwen-tts)
+# WORKER selects the handler module; defaults to SERVICE so the base images
+# are unchanged, stream variants pass e.g. WORKER=stt-stream explicitly
 ARG SERVICE=stt
+ARG WORKER=${SERVICE}
 
 ENV PYTHONUNBUFFERED=1 \
     HF_HOME=/app/hf \
     UV_PYTHON_DOWNLOADS=never \
     UV_PYTHON=/usr/local/bin/python \
-    WORKER=${SERVICE}
+    WORKER=${WORKER}
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg git build-essential sox \
