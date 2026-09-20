@@ -81,6 +81,32 @@ WORKERS_MAX = {
     "llm": 1,
 }
 
+# ---------------------------------------------------------------------------
+# streaming experiment variants (branch: streaming)
+#
+# separate image tags (:stream) and endpoint names (-stream) so the live
+# endpoints above keep pulling :latest and are never touched by this branch.
+# gpu pool + disk inherit from the base service; workers stay at 1 to fit
+# inside the same 5-worker quota.
+# ---------------------------------------------------------------------------
+
+STREAM_SERVICES = ("llm", "stt")
+
+STREAM_IMAGE_REPOS = {
+    "llm": "hrithickcodes/qwen3-14b-runpod:stream",
+    "stt": "hrithickcodes/qwen3-asr-1.7b-runpod:stream",
+}
+
+STREAM_ENDPOINT_NAMES = {
+    "llm": "qwen3-14b-stream",
+    "stt": "qwen3-asr-1.7b-stream",
+}
+
+WORKERS_MAX_STREAM = {
+    "llm": 1,
+    "stt": 1,
+}
+
 
 settings = DeploySettings()
 
