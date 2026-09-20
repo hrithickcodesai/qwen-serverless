@@ -19,9 +19,10 @@ client = ["sounddevice", "soundfile"]
 # different exact versions of transformers, so they can never coexist
 stt = ["torch", "qwen-asr", "loguru"]
 tts = ["torch", "torchaudio", "qwen-tts", "loguru", "soundfile"]
-# vllm 0.26 pins torch 2.11.0, the newest with cu128 wheels (runpod driver
-# compat); newer vllm needs torch 2.13 which only ships cu129+
-llm = ["vllm==0.26.0", "loguru"]
+# vllm 0.19.1 is the newest release whose compiled kernels target cuda 12
+# (0.20+ ship cuda 13 libs, incompatible with our cu128 stack for runpod
+# driver compat); it pins torch 2.10.0, which has cu128 wheels
+llm = ["vllm==0.19.1", "loguru"]
 
 [tool.uv]
 # declare the extras mutually exclusive so the lockfile can hold all three pins

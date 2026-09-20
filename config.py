@@ -69,9 +69,8 @@ class DeploySettings(BaseSettings):
     scaler_type: str = "QUEUE_DELAY"
     scaler_value: int = 4
 
-
-# gpu count per worker (all services run on a single gpu)
-gpu_count: int = 1
+    # gpu count per worker (all services run on a single gpu)
+    gpu_count: int = 1
 
 
 # runpod caps summed workers_max across endpoints (quota = 5); llm gets the
