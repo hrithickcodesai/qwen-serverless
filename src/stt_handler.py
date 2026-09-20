@@ -4,29 +4,32 @@ import pathlib
 import urllib.parse
 import urllib.request
 
-import torch
 from loguru import logger
 from qwen_asr import Qwen3ASRModel
+from qwen_asr.inference.utils import normalize_audio_input
 
 MODEL_ID = os.environ.get("STT_MODEL_ID", "/app/models/Qwen3-ASR-1.7B")
 DATA_URI_PREFIX = "data:audio"
+
+# 2s decode cadence: balance between partial freshness and the o(n) re-encode
+# of accumulated audio the streaming decoder does per chunk
+CHUNK_SIZE_SEC = 2.0
 
 model = None
 
 
 def load_model():
     global model
-    logger.info("loading model {}", MODEL_ID)
-    # bf16 halves weight memory and doubles tensor-core throughput vs fp32;
-    # sdpa = torch's fused flash/mem-efficient attention, fastest safe choice
-    # on ampere without pulling in flash-attention builds
-    model = Qwen3ASRModel.from_pretrained(
+    logger.info("loading model {} (vllm backend)", MODEL_ID)
+    # vllm backend: paged kv cache + flash attention on ampere. prefix caching
+    # reuses the identical text prompt prefix across streaming chunks, so each
+    # incremental decode only pays for the newly added audio tokens.
+    # 0.90 gpu util leaves headroom for activation spikes without oom.
+    model = Qwen3ASRModel.LLM(
         MODEL_ID,
-        dtype=torch.bfloat16,
-        device_map="cuda:0",
-        attn_implementation="sdpa",
-        max_inference_batch_size=8,
         max_new_tokens=512,
+        gpu_memory_utilization=0.90,
+        enable_prefix_caching=True,
     )
     logger.info("model loaded")
 
@@ -60,16 +63,41 @@ def handler(job):
     job_input = job.get("input") or {}
     audio = job_input.get("audio")
     if not audio:
-        return {"error": "input must include 'audio': an http(s) url or base64 string"}
+        yield {"error": "input must include 'audio': an http(s) url or base64 string"}
+        return
 
     language = job_input.get("language")
+    stream = bool(job_input.get("stream"))
     try:
-        audio_input = resolve_audio(audio)
-        result = model.transcribe(audio=audio_input, language=language)[0]
-        return {"text": result.text, "language": result.language}
+        path = resolve_audio(audio)
+        if stream:
+            yield from _transcribe_stream(path, language)
+        else:
+            result = model.transcribe(audio=path, language=language)[0]
+            yield {"text": result.text, "language": result.language}
     except Exception as exc:  # noqa: BLE001 - serverless caller needs an error payload
         logger.exception("transcription failed")
-        return {"error": f"{type(exc).__name__}: {exc}"}
+        yield {"error": f"{type(exc).__name__}: {exc}"}
+
+
+def _transcribe_stream(path, language):
+    """rolling partial transcript of a complete recording.
+
+    feeds 16k mono pcm through the library's streaming decoder (re-decodes
+    accumulated audio every chunk with prefix rollback), yielding the updated
+    partial text after each chunk; final yield is the settled transcript.
+    """
+    pcm = normalize_audio_input(path)
+    logger.info("streaming decode: {:.1f}s of audio", len(pcm) / 16000)
+
+    state = model.init_streaming_state(language=language, chunk_size_sec=CHUNK_SIZE_SEC)
+    step = state.chunk_size_samples
+    for start in range(0, len(pcm), step):
+        state = model.streaming_transcribe(pcm[start : start + step], state)
+        yield {"partial": state.text}
+    state = model.finish_streaming_transcribe(state)
+    logger.info("streaming decode done: {} chars", len(state.text))
+    yield {"text": state.text, "language": state.language}
 
 
 load_model()

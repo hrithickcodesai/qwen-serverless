@@ -1,23 +1,39 @@
+import asyncio
 import json
 import os
+import queue
+import threading
+import uuid
 
 from loguru import logger
 from transformers import AutoTokenizer
-from vllm import LLM, SamplingParams
+from vllm import AsyncEngineArgs, AsyncLLMEngine, SamplingParams
 
 MODEL_ID = os.environ.get("LLM_MODEL_ID", "/app/models/Qwen3-14B")
 
-llm = None
+engine = None
 tokenizer = None
+
+# async engine must live on a dedicated, always-running event loop; the
+# generator handler then bridges engine outputs into sync yields via a queue
+_loop = asyncio.new_event_loop()
+
+
+def _run_loop():
+    asyncio.set_event_loop(_loop)
+    _loop.run_forever()
+
+
+threading.Thread(target=_run_loop, daemon=True).start()
 
 
 def load_model():
-    global llm, tokenizer
+    global engine, tokenizer
     logger.info("loading llm {}", MODEL_ID)
-    # vllm: paged kv cache + continuous batching + fused flashattention
-    # kernels by default on ampere. prefix caching reuses the shared prompt
-    # prefix across requests. 0.90 gpu util leaves headroom for activation
-    # spikes without oom; max_model_len keeps kv memory bounded.
+    # vllm v1 engine: paged kv cache + continuous batching, flash attention
+    # backend selected automatically on ampere. prefix caching reuses the
+    # shared prompt prefix across requests. 0.90 gpu util leaves headroom for
+    # activation spikes without oom; max_model_len keeps kv memory bounded.
     engine_kwargs = dict(
         model=MODEL_ID,
         dtype="bfloat16",
@@ -31,9 +47,14 @@ def load_model():
     spec = os.environ.get("VLLM_SPEC_DECODE")
     if spec:
         engine_kwargs["speculative_config"] = json.loads(spec)
-    llm = LLM(**engine_kwargs)
+    # engine (and its output-handler task) must be created on the engine loop
+    engine = asyncio.run_coroutine_threadsafe(_create_engine(engine_kwargs), _loop).result()
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
     logger.info("llm loaded")
+
+
+async def _create_engine(engine_kwargs):
+    return AsyncLLMEngine.from_engine_args(AsyncEngineArgs(**engine_kwargs))
 
 
 def handler(job):
@@ -41,7 +62,8 @@ def handler(job):
     messages = job_input.get("messages")
     prompt = job_input.get("prompt")
     if not prompt and not messages:
-        return {"error": "input must include 'messages' (chat) or 'prompt' (raw)"}
+        yield {"error": "input must include 'messages' (chat) or 'prompt' (raw)"}
+        return
 
     sampling = SamplingParams(
         temperature=job_input.get("temperature", 0.7),
@@ -49,28 +71,60 @@ def handler(job):
         top_k=job_input.get("top_k", 20),
         max_tokens=job_input.get("max_tokens", 512),
     )
+    if messages:
+        text = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=job_input.get("enable_thinking", False),
+        )
+    else:
+        text = prompt
 
+    # yields flow from the engine's async generator into this sync generator
+    # through a thread-safe queue drained on the handler thread
+    chunks = queue.Queue()
+    request_id = uuid.uuid4().hex
+
+    async def _stream():
+        try:
+            async for out in engine.generate(text, sampling, request_id):
+                chunks.put(("out", out))
+            chunks.put(("done", None))
+        except BaseException as exc:  # noqa: BLE001 - caller needs an error payload
+            chunks.put(("error", exc))
+
+    asyncio.run_coroutine_threadsafe(_stream(), _loop)
+
+    full_text = []
+    finish_reason = None
     try:
-        if messages:
-            prompt_text = tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True,
-                enable_thinking=job_input.get("enable_thinking", False),
-            )
-            completions = llm.generate([prompt_text], sampling)
-        else:
-            completions = llm.generate([prompt], sampling)
-        completion = completions[0]
-        return {
-            "text": completion.outputs[0].text,
-            "finish_reason": completion.outputs[0].finish_reason,
-            "prompt_tokens": len(completion.prompt_token_ids),
-            "completion_tokens": len(completion.outputs[0].token_ids),
-        }
+        while True:
+            kind, payload = chunks.get()
+            if kind == "done":
+                break
+            if kind == "error":
+                raise payload
+            completion = payload.outputs[0]
+            delta = completion.text
+            if not delta:
+                continue
+            finish_reason = completion.finish_reason or finish_reason
+            full_text.append(delta)
+            yield {"delta": delta}
     except Exception as exc:  # noqa: BLE001 - serverless caller needs an error payload
         logger.exception("generation failed")
-        return {"error": f"{type(exc).__name__}: {exc}"}
+        yield {"error": f"{type(exc).__name__}: {exc}"}
+        return
+
+    joined = "".join(full_text)
+    logger.info("streamed {} chars, finish_reason={}", len(joined), finish_reason)
+    yield {
+        "text": joined,
+        "finish_reason": finish_reason,
+        "prompt_tokens": len(tokenizer.encode(text)) if text else 0,
+        "completion_tokens": len(tokenizer.encode(joined)) if joined else 0,
+    }
 
 
 load_model()
