@@ -26,7 +26,7 @@ def ensure_template(service):
     template = ctl.create_template(
         name=template_name,
         image_name=config.IMAGE_REPOS[service],
-        container_disk_in_gb=config.settings.container_disk_gb,
+        container_disk_in_gb=config.DISK_GB[service],
         env={
             "WORKER": service,
             "HF_HOME": "/app/hf",
@@ -43,7 +43,7 @@ def ensure_endpoint(service, template_id):
     if endpoint_name in existing:
         endpoint_id = existing[endpoint_name]
         print(f"endpoint exists: {endpoint_id} ({endpoint_name})")
-        update_endpoint(endpoint_id, endpoint_name)
+        update_endpoint(service, endpoint_id, endpoint_name)
     else:
         endpoint = ctl.create_endpoint(
             endpoint_name,
@@ -53,7 +53,7 @@ def ensure_endpoint(service, template_id):
             scaler_type=config.settings.scaler_type,
             scaler_value=config.settings.scaler_value,
             workers_min=config.settings.workers_min,
-            workers_max=config.settings.workers_max,
+            workers_max=config.WORKERS_MAX[service],
             flashboot=config.settings.flashboot,
             gpu_count=config.settings.gpu_count,
         )
@@ -63,13 +63,13 @@ def ensure_endpoint(service, template_id):
     return endpoint_id
 
 
-def update_endpoint(endpoint_id, endpoint_name):
+def update_endpoint(service, endpoint_id, endpoint_name):
     """push current scaling settings to an existing endpoint (sdk has no update call)."""
     query = (
         "mutation { saveEndpoint(input: {"
         f' id: "{endpoint_id}", name: "{endpoint_name}"'
         f", workersMin: {config.settings.workers_min}"
-        f", workersMax: {config.settings.workers_max}"
+        f", workersMax: {config.WORKERS_MAX[service]}"
         f", idleTimeout: {config.settings.idle_timeout}"
         f', scalerType: "{config.settings.scaler_type}"'
         f", scalerValue: {config.settings.scaler_value}"

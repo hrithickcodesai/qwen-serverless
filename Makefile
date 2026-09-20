@@ -7,8 +7,9 @@ export
 # (uv run bootstraps the venv on demand, no shell python needed)
 STT_IMAGE := $(shell uv run --no-sync python -c "import config; print(config.IMAGE_REPOS['stt'])")
 TTS_IMAGE := $(shell uv run --no-sync python -c "import config; print(config.IMAGE_REPOS['tts'])")
+LLM_IMAGE := $(shell uv run --no-sync python -c "import config; print(config.IMAGE_REPOS['llm'])")
 
-.PHONY: sync download-models build-stt build-tts push-stt push-tts deploy deploy-stt deploy-tts deploy-config format clean
+.PHONY: sync download-models build-stt build-tts build-llm push-stt push-tts push-llm deploy deploy-stt deploy-tts deploy-llm deploy-config format clean
 
 # uv replaces pip + manual venv: creates .venv and installs from pyproject.lock
 sync:
@@ -23,11 +24,17 @@ build-stt:
 build-tts:
 	docker build --platform linux/amd64 --build-arg SERVICE=tts --build-arg MODEL_DIR=Qwen3-TTS-12Hz-1.7B-VoiceDesign -t $(TTS_IMAGE) .
 
+build-llm:
+	docker build --platform linux/amd64 --build-arg SERVICE=llm --build-arg MODEL_DIR=Qwen3-14B -t $(LLM_IMAGE) .
+
 push-stt: build-stt
 	docker push $(STT_IMAGE)
 
 push-tts: build-tts
 	docker push $(TTS_IMAGE)
+
+push-llm: build-llm
+	docker push $(LLM_IMAGE)
 
 deploy-stt: sync
 	uv run python scripts/create_endpoint.py stt
@@ -35,7 +42,10 @@ deploy-stt: sync
 deploy-tts: sync
 	uv run python scripts/create_endpoint.py tts
 
-deploy: deploy-stt deploy-tts
+deploy-llm: sync
+	uv run python scripts/create_endpoint.py llm
+
+deploy: deploy-stt deploy-tts deploy-llm
 
 # print effective deploy config (images, gpu pools, scaling) without deploying
 deploy-config:

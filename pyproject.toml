@@ -19,13 +19,17 @@ client = ["sounddevice", "soundfile"]
 # different exact versions of transformers, so they can never coexist
 stt = ["torch", "qwen-asr", "loguru"]
 tts = ["torch", "torchaudio", "qwen-tts", "loguru", "soundfile"]
+# vllm 0.26 pins torch 2.11.0, the newest with cu128 wheels (runpod driver
+# compat); newer vllm needs torch 2.13 which only ships cu129+
+llm = ["vllm==0.26.0", "loguru"]
 
 [tool.uv]
-# declare the extras mutually exclusive so the lockfile can hold both pins
+# declare the extras mutually exclusive so the lockfile can hold all three pins
 conflicts = [
     [
         { extra = "stt" },
         { extra = "tts" },
+        { extra = "llm" },
     ],
 ]
 
