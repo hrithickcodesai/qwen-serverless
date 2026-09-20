@@ -17,7 +17,8 @@ client = ["sounddevice", "soundfile"]
 
 # container images install exactly one of these; qwen-asr and qwen-tts pin
 # different exact versions of transformers, so they can never coexist
-stt = ["torch", "qwen-asr", "loguru"]
+# stt-stream variant runs the asr model on the vllm backend, so stt needs vllm
+stt = ["torch", "qwen-asr", "loguru", "vllm==0.19.1"]
 tts = ["torch", "torchaudio", "qwen-tts", "loguru", "soundfile"]
 # vllm 0.19.1 is the newest release whose compiled kernels target cuda 12
 # (0.20+ ship cuda 13 libs, incompatible with our cu128 stack for runpod
