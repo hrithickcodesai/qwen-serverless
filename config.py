@@ -7,17 +7,20 @@ everything else lives here. run `python config.py` to see the effective values.
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 MODEL_DIRS = {
-    "stt": "Qwen3-ASR-1.7B",
+    "stt": "Qwen3-ASR-0.6B",
     "tts": "Qwen3-TTS-12Hz-1.7B-VoiceDesign",
-    "llm": "Qwen3-14B",
+    "llm": "Qwen3.5-9B",
 }
 
 # model repo ids on huggingface
 HF_REPO_IDS = {
-    "stt": "Qwen/Qwen3-ASR-1.7B",
+    "stt": "Qwen/Qwen3-ASR-0.6B",
     "tts": "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
-    "llm": "Qwen/Qwen3-14B",
+    "llm": "Qwen/Qwen3.5-9B",
 }
+
+# forced aligner loaded alongside the stt model (word-level timestamps)
+HF_ALIGNER_ID = "Qwen/Qwen3-ForcedAligner-0.6B"
 
 # docker image repos on ghcr (avoids docker hub pull stalls); one image per
 # service because qwen-asr, qwen-tts and vllm pin different exact versions of
@@ -36,11 +39,11 @@ ENDPOINT_NAMES = {
     "llm": "qwen3-14b",
 }
 
-# runpod gpu pool ids, all ampere
+# runpod gpu pool ids
 GPU_POOLS = {
-    "stt": "AMPERE_16",  # rtx a4000 16GB
-    "tts": "AMPERE_24",  # rtx a5000 24GB, headroom for the 2B tts model
-    "llm": "AMPERE_48",  # rtx a6000 48GB, single gpu fits 14B bf16 (~28GB) + kv cache
+    "stt": "AMPERE_16",  # rtx a4000 16gb, plenty for the 0.6b asr + aligner
+    "tts": "ADA_24",  # rtx 4090 24gb, ~1.5x a5000 decode bandwidth, cheaper
+    "llm": "BLACKWELL_32",  # rtx 5090 32gb, ~1.8 tb/s fits the 9b with kv headroom
 }
 
 # container disk in gb; model weights + torch wheels need the room

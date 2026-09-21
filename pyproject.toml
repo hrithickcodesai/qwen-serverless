@@ -20,10 +20,9 @@ client = ["sounddevice", "soundfile"]
 # stt-stream variant runs the asr model on the vllm backend, so stt needs vllm
 stt = ["torch", "qwen-asr", "loguru", "vllm==0.19.1"]
 tts = ["torch", "torchaudio", "qwen-tts", "loguru", "soundfile"]
-# vllm 0.19.1 is the newest release whose compiled kernels target cuda 12
-# (0.20+ ship cuda 13 libs, incompatible with our cu128 stack for runpod
-# driver compat); it pins torch 2.10.0, which has cu128 wheels
-llm = ["vllm==0.19.1", "loguru"]
+# llm: vllm 0.29 targets cuda 13 (torch 2.13 from pypi) - runpod hosts run
+# cuda 13 drivers (fitness checks report 13.0); qwen3.5 needs >= 0.29
+llm = ["vllm==0.29.0", "loguru"]
 
 [tool.uv]
 # declare the extras mutually exclusive so the lockfile can hold all three pins
@@ -35,15 +34,16 @@ conflicts = [
     ],
 ]
 
-# torch from the cu128 index (runpod driver compatible), not the cpu default
+# torch from the cu128 index (runpod driver compatible) for the stt/tts
+# stacks; the llm extra needs torch 2.13 (cu13, pypi default) for vllm 0.29
 [[tool.uv.index]]
 name = "pytorch-cu128"
 url = "https://download.pytorch.org/whl/cu128"
 explicit = true
 
 [tool.uv.sources]
-torch = { index = "pytorch-cu128" }
-torchaudio = { index = "pytorch-cu128" }
+torch = [{ index = "pytorch-cu128", marker = "extra != 'llm'" }]
+torchaudio = [{ index = "pytorch-cu128", marker = "extra != 'llm'" }]
 
 [tool.ruff]
 line-length = 100

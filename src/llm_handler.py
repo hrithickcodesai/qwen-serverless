@@ -10,7 +10,7 @@ from loguru import logger
 from transformers import AutoTokenizer
 from vllm import AsyncEngineArgs, AsyncLLMEngine, SamplingParams
 
-MODEL_ID = os.environ.get("LLM_MODEL_ID", "Qwen/Qwen3-14B")
+MODEL_ID = os.environ.get("LLM_MODEL_ID", "Qwen/Qwen3.5-9B")
 
 engine = None
 tokenizer = None
@@ -66,7 +66,7 @@ def _prepare(job_input):
         return None
     sampling = SamplingParams(
         temperature=job_input.get("temperature", 0.7),
-        top_p=job_input.get("top_p", 0.95),
+        top_p=job_input.get("top_p", 0.8),
         top_k=job_input.get("top_k", 20),
         max_tokens=job_input.get("max_tokens", 512),
     )

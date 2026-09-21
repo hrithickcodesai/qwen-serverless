@@ -4,11 +4,13 @@ import pathlib
 import urllib.parse
 import urllib.request
 
+import torch
 from loguru import logger
 from qwen_asr import Qwen3ASRModel
 from qwen_asr.inference.utils import normalize_audio_input
 
-MODEL_ID = os.environ.get("STT_MODEL_ID", "Qwen/Qwen3-ASR-1.7B")
+MODEL_ID = os.environ.get("STT_MODEL_ID", "Qwen/Qwen3-ASR-0.6B")
+ALIGNER_ID = os.environ.get("STT_ALIGNER_ID", "Qwen/Qwen3-ForcedAligner-0.6B")
 DATA_URI_PREFIX = "data:audio"
 
 # 2s decode cadence: balance between partial freshness and the o(n) re-encode
@@ -21,15 +23,20 @@ model = None
 def load_model():
     global model
     logger.info("loading model {} (vllm backend)", MODEL_ID)
-    # vllm backend: paged kv cache + flash attention on ampere. prefix caching
-    # reuses the identical text prompt prefix across streaming chunks, so each
-    # incremental decode only pays for the newly added audio tokens.
-    # 0.90 gpu util leaves headroom for activation spikes without oom.
+    # vllm backend: paged kv cache + flash attention. prefix caching reuses the
+    # identical text prompt prefix across streaming chunks, so each incremental
+    # decode only pays for the newly added audio tokens. 0.80 gpu util leaves
+    # vram for the forced aligner loaded outside the vllm engine.
     model = Qwen3ASRModel.LLM(
         MODEL_ID,
         max_new_tokens=512,
-        gpu_memory_utilization=0.90,
+        gpu_memory_utilization=0.80,
         enable_prefix_caching=True,
+        forced_aligner=ALIGNER_ID,
+        forced_aligner_kwargs=dict(
+            dtype=torch.bfloat16,
+            device_map="cuda:0",
+        ),
     )
     logger.info("model loaded")
 
@@ -67,10 +74,21 @@ def handler(job):
         return {"error": "input must include 'audio': an http(s) url or base64 string"}
 
     language = job_input.get("language")
+    with_timestamps = bool(job_input.get("timestamps"))
     try:
         path = resolve_audio(audio)
-        result = model.transcribe(audio=path, language=language)[0]
-        return {"text": result.text, "language": result.language}
+        result = model.transcribe(
+            audio=path,
+            language=language,
+            return_time_stamps=with_timestamps,
+        )[0]
+        out = {"text": result.text, "language": result.language}
+        if with_timestamps and result.time_stamps:
+            out["timestamps"] = [
+                {"text": seg.text, "start_ms": seg.start_time, "end_ms": seg.end_time}
+                for seg in result.time_stamps
+            ]
+        return out
     except Exception as exc:  # noqa: BLE001 - serverless caller needs an error payload
         logger.exception("transcription failed")
         return {"error": f"{type(exc).__name__}: {exc}"}

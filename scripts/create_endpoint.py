@@ -19,9 +19,13 @@ runpod.api_key = os.environ["RUNPOD_API_KEY"]
 # weights are not baked into images; workers download from huggingface on
 # boot, so templates point the handlers at repo ids instead of local paths
 MODEL_ENV = {
-    "stt": {"STT_MODEL_ID": config.HF_REPO_IDS["stt"]},
+    "stt": {"STT_MODEL_ID": config.HF_REPO_IDS["stt"], "STT_ALIGNER_ID": config.HF_ALIGNER_ID},
     "tts": {"TTS_MODEL_ID": config.HF_REPO_IDS["tts"]},
-    "llm": {"LLM_MODEL_ID": config.HF_REPO_IDS["llm"]},
+    "llm": {
+        "LLM_MODEL_ID": config.HF_REPO_IDS["llm"],
+        # qwen3.5 multi-token prediction spec decode (vllm 0.29)
+        "VLLM_SPEC_DECODE": '{"method": "qwen3_next_mtp", "num_speculative_tokens": 2}',
+    },
 }
 
 

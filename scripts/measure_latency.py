@@ -18,16 +18,24 @@ with open(TEST_WAV, "rb") as fh:
     AUDIO_B64 = base64.b64encode(fh.read()).decode()
 
 ENDPOINTS = {
-    "llm-stream": (os.environ["LLM_STREAM_ENDPOINT_ID"],
-                   {"messages": [{"role": "user", "content": "Count from 1 to 15."}],
-                    "max_tokens": 48}),
-    "llm": (os.environ["LLM_ENDPOINT_ID"],
-            {"messages": [{"role": "user", "content": "Count from 1 to 15."}], "max_tokens": 48}),
+    "llm-stream": (
+        os.environ["LLM_STREAM_ENDPOINT_ID"],
+        {"messages": [{"role": "user", "content": "Count from 1 to 15."}], "max_tokens": 48},
+    ),
+    "llm": (
+        os.environ["LLM_ENDPOINT_ID"],
+        {"messages": [{"role": "user", "content": "Count from 1 to 15."}], "max_tokens": 48},
+    ),
     "stt-stream": (os.environ["STT_STREAM_ENDPOINT_ID"], {"audio": AUDIO_B64, "stream": True}),
     "stt": (os.environ["STT_ENDPOINT_ID"], {"audio": AUDIO_B64}),
-    "tts": (os.environ["TTS_ENDPOINT_ID"],
-            {"text": "Hello from RunPod streaming test.", "instruct": "warm narrator",
-             "language": "English"}),
+    "tts": (
+        os.environ["TTS_ENDPOINT_ID"],
+        {
+            "text": "Hello from RunPod streaming test.",
+            "instruct": "warm narrator",
+            "language": "English",
+        },
+    ),
 }
 
 
@@ -71,8 +79,10 @@ def one_pass():
                     "final": (out[-1] if isinstance(out, list) and out else out),
                 }
                 r = results[name]
-                print(f"[{name}] {st}: delay={r['delay_s']}s total={r['total_s']}s "
-                      f"first_chunk={r['first_chunk_s']}s chunks={chunk_counts[name]}")
+                print(
+                    f"[{name}] {st}: delay={r['delay_s']}s total={r['total_s']}s "
+                    f"first_chunk={r['first_chunk_s']}s chunks={chunk_counts[name]}"
+                )
         time.sleep(0.5)
     for name in pending:
         results[name] = {"status": "TIMEOUT"}
