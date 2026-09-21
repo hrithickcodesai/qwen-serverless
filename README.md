@@ -8,6 +8,24 @@ Serverless endpoints on RunPod, all Ampere GPUs, scale to zero, alive 2 min afte
 | **tts** | Qwen3-TTS-12Hz-1.7B-VoiceDesign | `qwen3-tts-voicedesign` | A5000 24GB |
 | **llm** | Qwen3-14B (vLLM, flash attention + paged kv) | `qwen3-14b` | A6000 48GB |
 
+## streaming endpoints (branch: `streaming`)
+
+two extra endpoints running the same models with streaming output (`:stream` image tags, separate templates; the endpoints above stay on `:latest` and are untouched by this branch):
+
+| service | endpoint | what streams |
+| --- | --- | --- |
+| **llm-stream** | `qwen3-14b-stream` | one `{"delta": "..."}` per engine output, final `{"text", "finish_reason", "prompt_tokens", "completion_tokens"}` |
+| **stt-stream** | `qwen3-asr-1.7b-stream` | ASR on the vLLM backend; with `"stream": true` one `{"partial": "..."}` per 2s chunk, final `{"text", "language"}` |
+
+both are deployed with `workersMax: 0` to respect the 5-worker quota. to use one, borrow a slot from an idle endpoint (e.g. drop `qwen3-asr-1.7b` to 1) and set the stream endpoint's max to 1, then flip back after.
+
+```bash
+make deploy-stream        # create/update both stream endpoints
+make push-stream          # rebuild + push both :stream images
+```
+
+client flow (both endpoints): `POST /run` → poll `POST /stream/<job_id>` (chunks since last call) → final output is the list of all yielded chunks. llm-stream always streams; stt-stream only when `"stream": true` (plain jobs return one final dict).
+
 ## quickstart
 
 ```bash
