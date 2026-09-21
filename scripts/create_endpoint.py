@@ -38,14 +38,22 @@ def resolve_service(service_name):
         "HF_HUB_ENABLE_HF_TRANSFER": "1",
         **MODEL_ENV[base],
     }
+    workers_max = (
+        config.WORKERS_MAX_STREAM[base]
+        if service_name.endswith("-stream")
+        else config.WORKERS_MAX[service_name]
+    )
+    # WORKERS_MAX_CLAMP temporarily caps all endpoints during a quota borrow
+    # (set in .env, remove when the borrowed slots are returned)
+    clamp = os.environ.get("WORKERS_MAX_CLAMP")
+    if clamp:
+        workers_max = min(workers_max, int(clamp))
     return {
         "image": config.IMAGE_REPOS[base],
         "endpoint": config.STREAM_ENDPOINT_NAMES[base]
         if service_name.endswith("-stream")
         else config.ENDPOINT_NAMES[service_name],
-        "workers_max": config.WORKERS_MAX_STREAM[base]
-        if service_name.endswith("-stream")
-        else config.WORKERS_MAX[service_name],
+        "workers_max": workers_max,
         "gpu": config.GPU_POOLS[base],
         "disk": config.DISK_GB[base],
         "env": env,
