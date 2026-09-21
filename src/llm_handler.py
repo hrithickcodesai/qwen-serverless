@@ -90,6 +90,7 @@ def _iter_engine(text, sampling):
     first_logged = False
 
     async def _stream():
+        nonlocal first_logged
         try:
             async for out in engine.generate(text, sampling, request_id):
                 if not first_logged:
