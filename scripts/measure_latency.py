@@ -31,7 +31,7 @@ ENDPOINTS = {
 }
 
 
-def one_pass(label):
+def one_pass():
     """submit all jobs at once, then poll each; returns per-endpoint stats."""
     t0 = time.time()
     jobs = {}
