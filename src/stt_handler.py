@@ -8,7 +8,7 @@ from loguru import logger
 from qwen_asr import Qwen3ASRModel
 from qwen_asr.inference.utils import normalize_audio_input
 
-MODEL_ID = os.environ.get("STT_MODEL_ID", "/app/models/Qwen3-ASR-1.7B")
+MODEL_ID = os.environ.get("STT_MODEL_ID", "Qwen/Qwen3-ASR-1.7B")
 DATA_URI_PREFIX = "data:audio"
 
 # 2s decode cadence: balance between partial freshness and the o(n) re-encode
@@ -60,6 +60,29 @@ def resolve_audio(audio):
 
 
 def handler(job):
+    """plain handler: one-shot transcription, dict result (production contract)."""
+    job_input = job.get("input") or {}
+    audio = job_input.get("audio")
+    if not audio:
+        return {"error": "input must include 'audio': an http(s) url or base64 string"}
+
+    language = job_input.get("language")
+    try:
+        path = resolve_audio(audio)
+        result = model.transcribe(audio=path, language=language)[0]
+        return {"text": result.text, "language": result.language}
+    except Exception as exc:  # noqa: BLE001 - serverless caller needs an error payload
+        logger.exception("transcription failed")
+        return {"error": f"{type(exc).__name__}: {exc}"}
+
+
+def handler_stream(job):
+    """generator handler: rolling partial transcript of a complete recording.
+
+    feeds 16k mono pcm through the library's streaming decoder (re-decodes
+    accumulated audio every chunk with prefix rollback), yielding the updated
+    partial text after each chunk; final yield is the settled transcript.
+    """
     job_input = job.get("input") or {}
     audio = job_input.get("audio")
     if not audio:
@@ -67,37 +90,22 @@ def handler(job):
         return
 
     language = job_input.get("language")
-    stream = bool(job_input.get("stream"))
     try:
         path = resolve_audio(audio)
-        if stream:
-            yield from _transcribe_stream(path, language)
-        else:
-            result = model.transcribe(audio=path, language=language)[0]
-            yield {"text": result.text, "language": result.language}
+        pcm = normalize_audio_input(path)
+        logger.info("streaming decode: {:.1f}s of audio", len(pcm) / 16000)
+
+        state = model.init_streaming_state(language=language, chunk_size_sec=CHUNK_SIZE_SEC)
+        step = state.chunk_size_samples
+        for start in range(0, len(pcm), step):
+            state = model.streaming_transcribe(pcm[start : start + step], state)
+            yield {"partial": state.text}
+        state = model.finish_streaming_transcribe(state)
+        logger.info("streaming decode done: {} chars", len(state.text))
+        yield {"text": state.text, "language": state.language}
     except Exception as exc:  # noqa: BLE001 - serverless caller needs an error payload
         logger.exception("transcription failed")
         yield {"error": f"{type(exc).__name__}: {exc}"}
-
-
-def _transcribe_stream(path, language):
-    """rolling partial transcript of a complete recording.
-
-    feeds 16k mono pcm through the library's streaming decoder (re-decodes
-    accumulated audio every chunk with prefix rollback), yielding the updated
-    partial text after each chunk; final yield is the settled transcript.
-    """
-    pcm = normalize_audio_input(path)
-    logger.info("streaming decode: {:.1f}s of audio", len(pcm) / 16000)
-
-    state = model.init_streaming_state(language=language, chunk_size_sec=CHUNK_SIZE_SEC)
-    step = state.chunk_size_samples
-    for start in range(0, len(pcm), step):
-        state = model.streaming_transcribe(pcm[start : start + step], state)
-        yield {"partial": state.text}
-    state = model.finish_streaming_transcribe(state)
-    logger.info("streaming decode done: {} chars", len(state.text))
-    yield {"text": state.text, "language": state.language}
 
 
 load_model()

@@ -21,13 +21,13 @@ download-models: sync
 	uv run python scripts/download_model.py all
 
 build-stt:
-	docker build --platform linux/amd64 --build-arg SERVICE=stt --build-arg MODEL_DIR=Qwen3-ASR-1.7B -t $(STT_IMAGE) .
+	docker build --platform linux/amd64 --build-arg SERVICE=stt -t $(STT_IMAGE) .
 
 build-tts:
-	docker build --platform linux/amd64 --build-arg SERVICE=tts --build-arg MODEL_DIR=Qwen3-TTS-12Hz-1.7B-VoiceDesign -t $(TTS_IMAGE) .
+	docker build --platform linux/amd64 --build-arg SERVICE=tts -t $(TTS_IMAGE) .
 
 build-llm:
-	docker build --platform linux/amd64 --build-arg SERVICE=llm --build-arg MODEL_DIR=Qwen3-14B -t $(LLM_IMAGE) .
+	docker build --platform linux/amd64 --build-arg SERVICE=llm -t $(LLM_IMAGE) .
 
 push-stt: build-stt
 	docker push $(STT_IMAGE)
@@ -50,16 +50,13 @@ deploy-llm: sync
 deploy: deploy-stt deploy-tts deploy-llm
 
 # ---------------------------------------------------------------------------
-# streaming experiment variants (branch: streaming): same base SERVICE extra
-# and model dir, :stream image tag and -stream WORKER routing. existing
-# :latest images and endpoints are never rebuilt or redeployed from here.
+# streaming variants: same images as the base services; WORKER env in the
+# endpoint template routes to the generator handler, so no separate tags
 # ---------------------------------------------------------------------------
 
-build-llm-stream:
-	docker build --platform linux/amd64 --build-arg SERVICE=llm --build-arg WORKER=llm-stream --build-arg MODEL_DIR=Qwen3-14B -t $(LLM_STREAM_IMAGE) .
+build-llm-stream: build-llm
 
-build-stt-stream:
-	docker build --platform linux/amd64 --build-arg SERVICE=stt --build-arg WORKER=stt-stream --build-arg MODEL_DIR=Qwen3-ASR-1.7B -t $(STT_STREAM_IMAGE) .
+build-stt-stream: build-stt
 
 build-stream: build-llm-stream build-stt-stream
 

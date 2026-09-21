@@ -28,10 +28,10 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project --extra ${SERVICE} \
     && uv cache clean
 
-ARG MODEL_DIR
-COPY models/${MODEL_DIR}/ ./models/${MODEL_DIR}/
-
-ENV HF_HUB_OFFLINE=1 \
+# weights are not baked into the image: MODEL_ID env (template env) points at
+# the huggingface repo and the worker downloads them to the container disk on
+# boot (hf_transfer), so cold hosts skip the multi-gb image pull
+ENV HF_HUB_ENABLE_HF_TRANSFER=1 \
     PATH="/app/.venv/bin:$PATH"
 
 COPY src/ ./src/

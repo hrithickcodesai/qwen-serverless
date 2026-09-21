@@ -19,12 +19,15 @@ HF_REPO_IDS = {
     "llm": "Qwen/Qwen3-14B",
 }
 
-# docker hub repos; one image per service because qwen-asr, qwen-tts and
-# vllm pin different exact versions of transformers
+# docker image repos on ghcr (avoids docker hub pull stalls); one image per
+# service because qwen-asr, qwen-tts and vllm pin different exact versions of
+# transformers. weights are not baked in - workers download from huggingface
+# on boot (see Dockerfile)
+GHCR_ORG = "hrithickcodesai"
 IMAGE_REPOS = {
-    "stt": "hrithickcodes/qwen3-asr-1.7b-runpod:latest",
-    "tts": "hrithickcodes/qwen3-tts-voicedesign-runpod:latest",
-    "llm": "hrithickcodes/qwen3-14b-runpod:latest",
+    "stt": f"ghcr.io/{GHCR_ORG}/qwen3-asr-1.7b-runpod:fast",
+    "tts": f"ghcr.io/{GHCR_ORG}/qwen3-tts-voicedesign-runpod:fast",
+    "llm": f"ghcr.io/{GHCR_ORG}/qwen3-14b-runpod:fast",
 }
 
 ENDPOINT_NAMES = {
@@ -93,8 +96,8 @@ WORKERS_MAX = {
 STREAM_SERVICES = ("llm", "stt")
 
 STREAM_IMAGE_REPOS = {
-    "llm": "hrithickcodes/qwen3-14b-runpod:stream",
-    "stt": "hrithickcodes/qwen3-asr-1.7b-runpod:stream",
+    "llm": IMAGE_REPOS["llm"],
+    "stt": IMAGE_REPOS["stt"],
 }
 
 STREAM_ENDPOINT_NAMES = {

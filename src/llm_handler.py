@@ -9,13 +9,13 @@ from loguru import logger
 from transformers import AutoTokenizer
 from vllm import AsyncEngineArgs, AsyncLLMEngine, SamplingParams
 
-MODEL_ID = os.environ.get("LLM_MODEL_ID", "/app/models/Qwen3-14B")
+MODEL_ID = os.environ.get("LLM_MODEL_ID", "Qwen/Qwen3-14B")
 
 engine = None
 tokenizer = None
 
-# async engine must live on a dedicated, always-running event loop; the
-# generator handler then bridges engine outputs into sync yields via a queue
+# async engine must live on a dedicated, always-running event loop; handlers
+# then bridge engine outputs into sync returns/yields via a queue
 _loop = asyncio.new_event_loop()
 
 
@@ -57,14 +57,12 @@ async def _create_engine(engine_kwargs):
     return AsyncLLMEngine.from_engine_args(AsyncEngineArgs(**engine_kwargs))
 
 
-def handler(job):
-    job_input = job.get("input") or {}
+def _prepare(job_input):
+    """shared validation + prompt/sampling construction for both handlers."""
     messages = job_input.get("messages")
     prompt = job_input.get("prompt")
     if not prompt and not messages:
-        yield {"error": "input must include 'messages' (chat) or 'prompt' (raw)"}
-        return
-
+        return None
     sampling = SamplingParams(
         temperature=job_input.get("temperature", 0.7),
         top_p=job_input.get("top_p", 0.95),
@@ -80,9 +78,11 @@ def handler(job):
         )
     else:
         text = prompt
+    return text, sampling
 
-    # yields flow from the engine's async generator into this sync generator
-    # through a thread-safe queue drained on the handler thread
+
+def _iter_engine(text, sampling):
+    """submit to the engine loop; yield (kind, payload) items via a queue."""
     chunks = queue.Queue()
     request_id = uuid.uuid4().hex
 
@@ -95,13 +95,54 @@ def handler(job):
             chunks.put(("error", exc))
 
     asyncio.run_coroutine_threadsafe(_stream(), _loop)
+    while True:
+        yield chunks.get()
 
-    # engine yields cumulative text, so emit only the new suffix per output
+
+def handler(job):
+    """plain handler: full result in one dict (production contract)."""
+    prepared = _prepare(job.get("input") or {})
+    if prepared is None:
+        return {"error": "input must include 'messages' (chat) or 'prompt' (raw)"}
+    text, sampling = prepared
+
+    # engine yields cumulative text, so keep the latest full text
+    final_text = ""
+    finish_reason = None
+    try:
+        for kind, payload in _iter_engine(text, sampling):
+            if kind == "done":
+                break
+            if kind == "error":
+                raise payload
+            completion = payload.outputs[0]
+            final_text = completion.text
+            finish_reason = completion.finish_reason or finish_reason
+    except Exception as exc:  # noqa: BLE001 - serverless caller needs an error payload
+        logger.exception("generation failed")
+        return {"error": f"{type(exc).__name__}: {exc}"}
+
+    logger.info("generated {} chars, finish_reason={}", len(final_text), finish_reason)
+    return {
+        "text": final_text,
+        "finish_reason": finish_reason,
+        "prompt_tokens": len(tokenizer.encode(text)) if text else 0,
+        "completion_tokens": len(tokenizer.encode(final_text)) if final_text else 0,
+    }
+
+
+def handler_stream(job):
+    """generator handler: one yield per output step, final yield with stats."""
+    prepared = _prepare(job.get("input") or {})
+    if prepared is None:
+        yield {"error": "input must include 'messages' (chat) or 'prompt' (raw)"}
+        return
+    text, sampling = prepared
+
     prev_text = ""
     finish_reason = None
     try:
-        while True:
-            kind, payload = chunks.get()
+        for kind, payload in _iter_engine(text, sampling):
             if kind == "done":
                 break
             if kind == "error":
