@@ -28,15 +28,15 @@ HF_ALIGNER_ID = "Qwen/Qwen3-ForcedAligner-0.6B"
 # on boot (see Dockerfile)
 GHCR_ORG = "hrithickcodesai"
 IMAGE_REPOS = {
-    "stt": f"ghcr.io/{GHCR_ORG}/qwen3-asr-1.7b-runpod:fast",
+    "stt": f"ghcr.io/{GHCR_ORG}/qwen3-asr-0.6b-runpod:fast",
     "tts": f"ghcr.io/{GHCR_ORG}/qwen3-tts-voicedesign-runpod:fast",
-    "llm": f"ghcr.io/{GHCR_ORG}/qwen3-14b-runpod:fast",
+    "llm": f"ghcr.io/{GHCR_ORG}/qwen3.5-9b-runpod:fast",
 }
 
 ENDPOINT_NAMES = {
-    "stt": "qwen3-asr-1.7b",
+    "stt": "qwen3-asr-0.6b",
     "tts": "qwen3-tts-voicedesign",
-    "llm": "qwen3-14b",
+    "llm": "qwen3.5-9b",
 }
 
 # runpod gpu pool ids
@@ -104,8 +104,8 @@ STREAM_IMAGE_REPOS = {
 }
 
 STREAM_ENDPOINT_NAMES = {
-    "llm": "qwen3-14b-stream",
-    "stt": "qwen3-asr-1.7b-stream",
+    "llm": "qwen3.5-9b-stream",
+    "stt": "qwen3-asr-0.6b-stream",
 }
 
 WORKERS_MAX_STREAM = {
