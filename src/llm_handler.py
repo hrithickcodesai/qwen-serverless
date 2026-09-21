@@ -96,7 +96,8 @@ def handler(job):
 
     asyncio.run_coroutine_threadsafe(_stream(), _loop)
 
-    full_text = []
+    # engine yields cumulative text, so emit only the new suffix per output
+    prev_text = ""
     finish_reason = None
     try:
         while True:
@@ -106,24 +107,26 @@ def handler(job):
             if kind == "error":
                 raise payload
             completion = payload.outputs[0]
-            delta = completion.text
+            cur_text = completion.text
+            if not cur_text.startswith(prev_text):
+                raise ValueError(f"non-monotonic engine output: {prev_text!r} -> {cur_text!r}")
+            delta = cur_text[len(prev_text) :]
+            prev_text = cur_text
             if not delta:
                 continue
             finish_reason = completion.finish_reason or finish_reason
-            full_text.append(delta)
             yield {"delta": delta}
     except Exception as exc:  # noqa: BLE001 - serverless caller needs an error payload
         logger.exception("generation failed")
         yield {"error": f"{type(exc).__name__}: {exc}"}
         return
 
-    joined = "".join(full_text)
-    logger.info("streamed {} chars, finish_reason={}", len(joined), finish_reason)
+    logger.info("streamed {} chars, finish_reason={}", len(prev_text), finish_reason)
     yield {
-        "text": joined,
+        "text": prev_text,
         "finish_reason": finish_reason,
         "prompt_tokens": len(tokenizer.encode(text)) if text else 0,
-        "completion_tokens": len(tokenizer.encode(joined)) if joined else 0,
+        "completion_tokens": len(tokenizer.encode(prev_text)) if prev_text else 0,
     }
 
 
