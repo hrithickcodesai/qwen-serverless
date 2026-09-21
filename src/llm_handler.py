@@ -3,6 +3,7 @@ import json
 import os
 import queue
 import threading
+import time
 import uuid
 
 from loguru import logger
@@ -85,10 +86,18 @@ def _iter_engine(text, sampling):
     """submit to the engine loop; yield (kind, payload) items via a queue."""
     chunks = queue.Queue()
     request_id = uuid.uuid4().hex
+    t0 = time.perf_counter()
+    first_logged = False
 
     async def _stream():
         try:
             async for out in engine.generate(text, sampling, request_id):
+                if not first_logged:
+                    first_logged = True
+                    logger.info(
+                        "llm ttft (engine): first output after {:.2f}s",
+                        time.perf_counter() - t0,
+                    )
                 chunks.put(("out", out))
             chunks.put(("done", None))
         except BaseException as exc:  # noqa: BLE001 - caller needs an error payload

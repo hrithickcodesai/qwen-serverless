@@ -1,6 +1,7 @@
 import base64
 import io
 import os
+import time
 
 import soundfile as sf
 import torch
@@ -29,10 +30,34 @@ def load_model():
         device_map="cuda:0",
         attn_implementation="sdpa",
     )
-    # cuDNN autotune: run a tiny synthesis so the first real job doesn't pay
-    # kernel-selection cost (shaves seconds off the first request)
+    # phase timing: wrap the codec generation and the vocoder decode so worker
+    # logs show where synthesis latency goes
+    original_generate = model.model.generate
+    original_decode = model.model.speech_tokenizer.decode
+
+    def timed_generate(*args, **kwargs):
+        t0 = time.perf_counter()
+        out = original_generate(*args, **kwargs)
+        logger.info("tts phase: codec generation {:.2f}s", time.perf_counter() - t0)
+        return out
+
+    def timed_decode(*args, **kwargs):
+        t0 = time.perf_counter()
+        out = original_decode(*args, **kwargs)
+        logger.info("tts phase: vocoder decode {:.2f}s", time.perf_counter() - t0)
+        return out
+
+    model.model.generate = timed_generate
+    model.model.speech_tokenizer.decode = timed_decode
+
+    # cuDNN autotune: warm up with a realistic sentence so the first real job
+    # doesn't pay kernel-selection cost on production-length inputs
     try:
-        model.generate_voice_design(text="warmup.", instruct="", language="English")
+        model.generate_voice_design(
+            text="Hello from RunPod streaming test.",
+            instruct="warm narrator",
+            language="English",
+        )
         logger.info("warmup synthesis done")
     except Exception:  # noqa: BLE001 - warmup must never block startup
         logger.warning("warmup synthesis failed, continuing")
@@ -63,6 +88,11 @@ def handler(job):
             **sampling,
         )
         audio = wav_bytes(wavs[0], sample_rate)
+        logger.info(
+            "tts synthesis: {:.1f}s audio from {} chars",
+            len(wavs[0]) / sample_rate,
+            len(text),
+        )
         return {
             "audio": base64.b64encode(audio).decode(),
             "content_type": "audio/wav",
