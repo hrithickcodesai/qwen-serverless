@@ -31,13 +31,15 @@ models are fast.
 
 ## warm latency (worker alive, idle_timeout 600 s)
 
-| api | queue delay | execution | notes |
+second pass, tight polling (0.25 s), measured directly:
+
+| api | ttft / first output | execution | notes |
 | --- | --- | --- | --- |
-| llm-stream | 0.2-1.0 s | **1.6-2.8 s** (48 tokens) | first delta ~1-4 s |
-| llm | 0.1-1.2 s | **2.7 s** | single dict response |
-| stt-stream | 0.1 s | **0.6 s** | first partial ~3-15 s (2 s decode cadence) |
-| stt | 0.1 s | **0.36-0.62 s** (3 s clip) | single dict |
-| tts | 0.1-45 s* | **4.0-5.3 s** | *worker had scaled down between passes; time-to-first-audio = full synthesis (non-streaming) |
+| llm-stream | **TTFT 1.9 s** (first delta) | 5.5 s (48 tokens) | time-to-first-token measured via /stream |
+| stt-stream | **first partial 2.45 s** | 0.63 s (3 s clip) | partial transcript after the first 2 s decode chunk |
+| tts | **TTFA 5.0 s** (= full synthesis) | 4.0-5.3 s | non-streaming by design; TTFA = full synthesis |
+| stt | n/a (single response) | 0.36-0.62 s | full transcribe of a 3 s clip |
+| llm | single response | 2.7-2.8 s | |
 
 ## streaming verification
 
