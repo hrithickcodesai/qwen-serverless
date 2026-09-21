@@ -107,6 +107,7 @@ def handler(job):
             if kind == "error":
                 raise payload
             completion = payload.outputs[0]
+            finish_reason = completion.finish_reason or finish_reason
             cur_text = completion.text
             if not cur_text.startswith(prev_text):
                 raise ValueError(f"non-monotonic engine output: {prev_text!r} -> {cur_text!r}")
@@ -114,7 +115,6 @@ def handler(job):
             prev_text = cur_text
             if not delta:
                 continue
-            finish_reason = completion.finish_reason or finish_reason
             yield {"delta": delta}
     except Exception as exc:  # noqa: BLE001 - serverless caller needs an error payload
         logger.exception("generation failed")
